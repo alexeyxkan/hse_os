@@ -1,4 +1,3 @@
-#include <time.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -7,7 +6,7 @@
 #include <sys/types.h>
 #include <errno.h>
 
-int fun1(int semid, struct sembuf *buf) {
+/*int fun1(int semid, struct sembuf *buf) {
 	buf->sem_op = -1;
     buf->sem_flg = 0;
     buf->sem_num = 0;
@@ -27,13 +26,13 @@ void re(char* string, size_t size) {
         string[i] = string[size - i - 1];
         string[size - i - 1] = t;
     }
-}
+}*/
 
-int main()
-{
+int main() {
   struct sembuf mybuf;
   int semid;
   int     fd[2], result;
+  int count;
 
   size_t size;
   char  resstring[14];
@@ -41,6 +40,8 @@ int main()
   char pathname[] = "05-3.c";
   key_t key; // IPC key
 
+  scanf("%d", &count);
+  
   if (pipe(fd) < 0) {
     printf("Can\'t open pipe\n");
     exit(-1);
@@ -61,7 +62,16 @@ int main()
 	  
 	  printf("Create successful\n");
   }
-
+  
+  mybuf.sem_num = 0;
+  mybuf.sem_op = 1;
+  mybuf.sem_flg = 0;
+  
+  if (semop(semid, &mybuf, 1) < 0) {
+      printf("Cant set sem value = 1\n");
+      exit(-1);
+  }
+  
   result = fork();
 
   if (result < 0) {
@@ -69,58 +79,99 @@ int main()
     exit(-1);
   } 
   else if (result > 0) {
-	  //parent
-
-	srand(time(NULL));
-    for (int i = 0; i < rand() * 1000; ++i);
-	
-    size = write(fd[1], "Hello, world!", 14);
-
-    if (size != 14) {
-      printf("Can\'t write all string to pipe\n");
+	//parent
+	mybuf.sem_num = 0;
+    mybuf.sem_op = -1;
+    mybuf.sem_flg = 0;
+    if (semop(semid, &mybuf, 1) < 0) {
+      printf("Cant drop sem value = 1\n");
       exit(-1);
     }
-	else {
-		printf("parent wrote msg\n");
-	}
 	
-	fun1(semid, &mybuf);
-
-    size = read(fd[0], resstring, 14);
-    if (size < 0) {
+	for (int i = 0; i < count; i++) {
+	  size = write(fd[1], "Hello, world!", 14);
+	  if (size != 14) {
+        printf("Can\'t write all string to pipe\n");
+        exit(-1);
+      }
+	  else printf("parent wrote msg\n");
+	  
+	  mybuf.sem_num = 0;
+      mybuf.sem_op = 2;
+      mybuf.sem_flg = 0;
+	  
+	  if (semop(semid, &mybuf, 1) < 0) {
+        printf("Critical section error!\n");
+        exit(-1);
+      }
+	  
+	  mybuf.sem_num = 0;
+      mybuf.sem_op = 0;
+      mybuf.sem_flg = 0;
+	  
+	  if (semop(semid, &mybuf, 1) < 0) {
+        printf("Critical section error!\n");
+        exit(-1);
+      }
+	  
+	  mybuf.sem_num = 0;
+      mybuf.sem_op = -1;
+      mybuf.sem_flg = 0;
+      if (semop(semid, &mybuf, 1) < 0) {
+        printf("Can\'t enter the critical section properly in program A\n");
+        exit(-1);
+      }
+	  
+	  size = read(fd[0], resstring, 14);
+	  
+	  if (size < 0) {
         printf("Cant read string\n");
         exit(-1);
-    }
+	  }
 	
-	printf("parent read: %s\n, resstring");
-	close(fd[1]);
-	close(fd[0]);
+	  printf("parent read: %s\n, resstring");
+	}
 
     printf("Parent exit\n");
-
-  } else {
-
-    /* Child process */
-
-    size = read(fd[0], resstring, 14);
-
-    if (size < 0) {
-      printf("Can\'t read string from pipe\n");
-      exit(-1);
-    }
-
-    printf("Child exit, resstring:%s\n", resstring);
+  } 
+  else {
+	// child
 	
-	re(resstring, 13);
-        size = write(fd[1], resstring, 14);
-        fun2(semid, &mybuf); 
-
-    if (size != 14) {
+	for (int i = 0; i < count; i++) {
+	  mybuf.sem_num = 0;
+      mybuf.sem_op = -2;
+      mybuf.sem_flg = 0;
+      if (semop(semid, &mybuf, 1) < 0) {
+        printf("Critical section error!\n");
+        exit(-1);
+      }
+	  
+	  size = read(fd[0], resstring, 14);
+	  
+	  if (size < 0) {
+        printf("Can\'t read string from pipe\n");
+        exit(-1);
+      }
+	  
+	  printf("Child exit, resstring:%s\n", resstring);
+	  
+	  size = write(fd[1], "Hello, world!", 14);
+	  
+	  if (size != 14) {
         printf("Cant write all string\n");
         exit(-1);
-    } else {
-        printf("child wrote msg\n");
-    }
+	  } 
+	  else printf("child wrote msg\n");
+	  
+	  mybuf.sem_num = 0;
+      mybuf.sem_op = 1;
+      mybuf.sem_flg = 0;
+	  
+	  if (semop(semid, &mybuf, 1) < 0) {
+        printf("Critical section error!\n");
+        exit(-1);
+      }
+	}
 	
 	close(fd[1]);
     close(fd[0]);
